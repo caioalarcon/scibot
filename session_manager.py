@@ -29,8 +29,9 @@ def get_or_create_session(session_name: str = None):
         model="gpt-4.1",
         instructions=(
             "Você é um assistente científico. "
-            "Use apenas os artigos no vector store para responder perguntas. "
-            "Sempre cite a fonte (DOI, título ou autores)."
+            "Use apenas os trechos dos arquivos responder perguntas. "
+            "Sempre cite trechos literais para embasar cada resposta, de preferência mais de um trecho."
+            "Se a resposta não estiver nas fontes, informe isso."
         ),
         tools=[{"type": "file_search"}],
         tool_resources={

@@ -1,27 +1,61 @@
+# app.py
 import streamlit as st
+import os
+from openai import OpenAI
 from session_manager import get_or_create_session
-from assistant_runner import run_assistant_message
+from vectorstore_manager import process_user_input
+
+# Configuração
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+# Identificador da sessão
+session_name = st.text_input("Nome da sessão:", value="default_session")
 
 st.set_page_config(page_title="Assistente Científico", layout="wide")
-st.title("🔬 Assistente Científico com PDFs")
+st.title("🔬 Assistente Científico com Vector Store Dinâmico")
 
-# Entrada de sessão manual (ou gera nova se vazio)
-session_name = st.text_input("ID da sessão (deixe em branco para nova):", "")
-
-if "session" not in st.session_state:
-    st.session_state.session = get_or_create_session(session_name or None)
+# Inicializa a sessão
+if "session" not in st.session_state or st.session_state.session["session_name"] != session_name:
+    st.session_state.session = get_or_create_session(session_name)
     st.session_state.history = []
 
+# Entrada do usuário
 user_input = st.text_input("Digite sua pergunta:")
 
 if user_input:
-    st.session_state.history.append(("Você", user_input))
-    st.write("🔎 Hook disparado → aqui vamos buscar novos artigos futuramente!")
+    # ---- Hook síncrono: atualiza o vector store ----
+    st.write("🔄 Atualizando vector store...")
+    process_user_input(st.session_state.session, user_input)
 
-    answer = run_assistant_message(st.session_state.session, user_input)
+    # ---- Agora sim, conversa com o Assistant ----
+    client.beta.threads.messages.create(
+        thread_id=st.session_state.session["thread_id"],
+        role="user",
+        content=user_input
+    )
+
+    run = client.beta.threads.runs.create_and_poll(
+        thread_id=st.session_state.session["thread_id"],
+        assistant_id=st.session_state.session["assistant_id"],
+    )
+
+    # Pega todas as mensagens
+    messages = client.beta.threads.messages.list(
+        thread_id=st.session_state.session["thread_id"]
+    )
+
+    # Última resposta do Assistant
+    answer = None
+    for msg in reversed(messages.data):
+        if msg.role == "assistant":
+            answer = msg.content[0].text.value
+            break
+
     if answer:
+        st.session_state.history.append(("Você", user_input))
         st.session_state.history.append(("Assistente", answer))
 
-# Mostra histórico
+# Histórico
 for role, text in st.session_state.history:
     st.markdown(f"**{role}:** {text}")
