@@ -1,70 +1,56 @@
 import streamlit as st
-import requests
 import os
 from openai import OpenAI
 
-# Configure sua API key do OpenAI
+# Configuração
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-st.set_page_config(page_title="Assistente Científico", layout="wide")
-st.title("🔬 Assistente Científico com GPT + OpenAlex")
+# ID real do assistant
+ASSISTANT_ID = "asst_p0BqoG3q2co3G18GyYUDh7bg"
 
-# Histórico de conversa
-if "history" not in st.session_state:
+st.set_page_config(page_title="Assistente Científico", layout="wide")
+st.title("🔬 Assistente Científico com PDFs")
+
+# Inicializa thread e histórico
+if "thread_id" not in st.session_state:
+    thread = client.beta.threads.create()
+    st.session_state.thread_id = thread.id
     st.session_state.history = []
 
-# Entrada do usuário
+# Input do usuário
 user_input = st.text_input("Digite sua pergunta:")
 
-def search_openalex(query, max_results=3):
-    url = f"https://api.openalex.org/works?q={query}&per_page={max_results}"
-    resp = requests.get(url)
-    if resp.status_code != 200:
-        return []
-    data = resp.json()
-    results = []
-    for work in data.get("results", []):
-        title = work.get("title", "Sem título")
-        doi = work.get("doi", "Sem DOI")
-        authors = [a["author"]["display_name"] for a in work.get("authorships", [])]
-        results.append({
-            "title": title,
-            "doi": doi,
-            "authors": ", ".join(authors)
-        })
-    return results
-
 if user_input:
-    # Busca artigos no OpenAlex
-    articles = search_openalex(user_input)
-
-    # Monta contexto com artigos encontrados
-    articles_context = "\n".join(
-        [f"- {a['title']} ({a['doi']})" for a in articles]
-    ) or "Nenhum artigo encontrado."
-
-    prompt = f"""
-    Pergunta: {user_input}
-
-    Aqui estão alguns artigos encontrados no OpenAlex:
-    {articles_context}
-
-    Responda de forma clara, usando os artigos como referência quando possível.
-    """
-
-    completion = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "system", "content": "Você é um assistente científico."},
-                  {"role": "user", "content": prompt}]
+    # adiciona a mensagem do usuário na thread
+    client.beta.threads.messages.create(
+        thread_id=st.session_state.thread_id,
+        role="user",
+        content=user_input
     )
 
-    answer = completion.choices[0].message.content
+    # executa o assistant
+    run = client.beta.threads.runs.create_and_poll(
+        thread_id=st.session_state.thread_id,
+        assistant_id=ASSISTANT_ID,
+    )
 
-    # Armazena no histórico
-    st.session_state.history.append(("Você", user_input))
-    st.session_state.history.append(("Assistente", answer))
+    # pega todas as mensagens da thread
+    messages = client.beta.threads.messages.list(
+        thread_id=st.session_state.thread_id
+    )
 
-# Mostra histórico
+    # encontra a última resposta do assistant
+    answer = None
+    for msg in reversed(messages.data):
+        if msg.role == "assistant":
+            answer = msg.content[0].text.value
+            break
+
+    if answer:
+        st.session_state.history.append(("Você", user_input))
+        st.session_state.history.append(("Assistente", answer))
+
+# mostra o histórico
 for role, text in st.session_state.history:
     st.markdown(f"**{role}:** {text}")
