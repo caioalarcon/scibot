@@ -1,9 +1,9 @@
+# session_manager.py
 import os
 import uuid
-from openai import OpenAI
+from openai_manager import get_client, get_prompt
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = get_client()
 
 def get_or_create_session(session_name: str = None):
     """
@@ -23,20 +23,16 @@ def get_or_create_session(session_name: str = None):
         expires_after={"anchor": "last_active_at", "days": 7}
     )
 
+    # pega prompt do .env
+    assistant_prompt = get_prompt("PROMPT_ASSISTANT")
+
     # cria assistant ligado ao vector store
     asst = client.beta.assistants.create(
         name=f"SciBot_{session_name}",
         model="gpt-4.1",
-        instructions=(
-            "Você é um assistente científico. "
-            "Use apenas os trechos dos arquivos responder perguntas. "
-            "Sempre cite trechos literais para embasar cada resposta, de preferência mais de um trecho."
-            "Se a resposta não estiver nas fontes, informe isso."
-        ),
+        instructions=assistant_prompt,
         tools=[{"type": "file_search"}],
-        tool_resources={
-            "file_search": {"vector_store_ids": [vs.id]}
-        }
+        tool_resources={"file_search": {"vector_store_ids": [vs.id]}}
     )
 
     # cria thread vazia
