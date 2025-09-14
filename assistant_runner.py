@@ -1,13 +1,15 @@
-from openai import OpenAI
-import os
+# assistant_runner.py
+from openai_manager import get_client, get_prompt
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = get_client()
 
 def run_assistant_message(session, user_input):
     """
     Envia mensagem do usuário para a thread e roda o assistant vinculado.
+    Usa prompt do .env para garantir consistência.
     """
+    assistant_prompt = get_prompt("PROMPT_ASSISTANT")
+
     # Adiciona mensagem
     client.beta.threads.messages.create(
         thread_id=session["thread_id"],
@@ -19,12 +21,11 @@ def run_assistant_message(session, user_input):
     run = client.beta.threads.runs.create_and_poll(
         thread_id=session["thread_id"],
         assistant_id=session["assistant_id"],
+        instructions=assistant_prompt
     )
 
     # Recupera mensagens
-    messages = client.beta.threads.messages.list(
-        thread_id=session["thread_id"]
-    )
+    messages = client.beta.threads.messages.list(thread_id=session["thread_id"])
 
     # Pega a última resposta do assistant
     answer = None
