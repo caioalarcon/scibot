@@ -33,13 +33,14 @@ def extract_keywords(user_input: str) -> list[str]:
     except Exception:
         return []
 
+
 def process_user_input(session, user_input: str, max_results=10, timeout=300):
     """
     Processa input do usuário:
     - Extrai keywords
     - Busca no OpenAlex
     - Baixa artigos via script existente
-    - Faz upload para o vector store
+    - Faz upload para o vector store (sem duplicar uploads já existentes)
     - Bloqueia até indexação terminar ou timeout
     """
     keywords = extract_keywords(user_input)
@@ -59,13 +60,27 @@ def process_user_input(session, user_input: str, max_results=10, timeout=300):
     outdir = Path("temp") / session_name
     pdfs = list(outdir.glob("*.pdf"))
 
+    # Lista arquivos já no storage
+    existing_files = client.files.list(purpose="assistants").data
+    existing_map = {f.filename: f.id for f in existing_files if hasattr(f, "filename")}
+
     uploaded_ids = []
     for pdf in pdfs:
-        with open(pdf, "rb") as f:
-            file_obj = client.files.create(file=f, purpose="assistants")
-        client.vector_stores.files.create(vector_store_id=vs_id, file_id=file_obj.id)
-        uploaded_ids.append(file_obj.id)
-        print(f"Arquivo {pdf} enviado como {file_obj.id}")
+        pdf_name = pdf.name
+        if pdf_name in existing_map:
+            # já está no storage
+            file_id = existing_map[pdf_name]
+            print(f"✅ Arquivo {pdf_name} já existe no storage ({file_id}), pulando upload.")
+        else:
+            # upload novo
+            with open(pdf, "rb") as f:
+                file_obj = client.files.create(file=f, purpose="assistants")
+            file_id = file_obj.id
+            print(f"⬆️  Arquivo {pdf_name} enviado como {file_id}")
+
+        # vincula ao vector store
+        client.vector_stores.files.create(vector_store_id=vs_id, file_id=file_id)
+        uploaded_ids.append(file_id)
 
     # Aguarda indexação
     start = time.time()
